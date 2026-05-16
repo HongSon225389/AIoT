@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindLink EEG Pro - Precision Parsing</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #020617 0%, #0f172a 100%);
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-card:hover {
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .raw-canvas-container {
+            position: relative;
+            width: 100%;
+            height: 320px;
+            background: #000;
+            border-radius: 1.5rem;
+            border: 1px solid rgba(16, 185, 129, 0.1);
+            overflow: hidden;
+        }
+
+        .raw-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .glow-emerald {
+            text-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(16, 185, 129, 0.2);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body class="gradient-bg text-white min-h-screen font-sans custom-scrollbar">
+
+    <div class="container mx-auto px-4 py-6">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <div>
+                <h1
+                    class="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-500 glow-emerald italic uppercase">
+                    OptiMind Analyzer
+                </h1>
+                <p class="text-slate-500 text-[10px] tracking-[0.2em] uppercase mt-1 font-bold italic">Real-time eSense™
+                    Parser • X-Y Calibrated</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="statusIndicator"
+                    class="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-slate-900/50 border border-slate-800">
+                    <span id="statusDot"
+                        class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.6)]"></span>
+                    <span id="statusText"
+                        class="text-[9px] font-black uppercase text-slate-500 tracking-widest text-center">System
+                        Offline</span>
+                </div>
+                <button id="connectBtn"
+                    class="bg-white text-black hover:bg-emerald-400 px-8 py-2.5 rounded-2xl font-black text-xs shadow-xl transition-all active:scale-95 uppercase">
+                    Kết nối thiết bị
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+
+            <!-- Metrics Column -->
+            <div class="lg:col-span-3 space-y-6">
+                <!-- Attention Card -->
+                <div class="stat-card p-6 rounded-[2rem] relative overflow-hidden border-b-4 border-b-blue-500/50">
+                    <div id="attentionBar"
+                        class="absolute bottom-0 left-0 w-full bg-blue-500/10 transition-all duration-700"
+                        style="height: 0%"></div>
+                    <h4 class="text-blue-400 text-[10px] font-black uppercase mb-1 relative tracking-widest">Attention
+                    </h4>
+                    <div id="attentionVal" class="text-7xl font-black mb-1 relative tracking-tighter transition-all">0
+                    </div>
+                    <div class="text-[8px] text-slate-500 font-bold uppercase relative italic">Mental Focus</div>
+                </div>
+
+                <!-- Relax Card -->
+                <div class="stat-card p-6 rounded-[2rem] relative overflow-hidden border-b-4 border-b-cyan-500/50">
+                    <div id="meditationBar"
+                        class="absolute bottom-0 left-0 w-full bg-cyan-500/10 transition-all duration-700"
+                        style="height: 0%"></div>
+                    <h4 class="text-cyan-400 text-[10px] font-black uppercase mb-1 relative tracking-widest">Relaxation
+                    </h4>
+                    <div id="meditationVal" class="text-7xl font-black mb-1 relative tracking-tighter transition-all">0
+                    </div>
+                    <div class="text-[8px] text-slate-500 font-bold uppercase relative italic">Calmness State</div>
+                </div>
+
+                <!-- Signal Card -->
+                <div id="signalCard"
+                    class="stat-card p-5 rounded-2xl border-l-4 border-red-500 transition-colors duration-500">
+                    <h4 class="text-slate-500 text-[9px] font-black uppercase tracking-widest">Signal Quality</h4>
+                    <div class="flex justify-between items-end mt-1">
+                        <div id="signalDesc" class="text-lg font-black text-slate-200 tracking-tighter uppercase">No
+                            Data</div>
+                        <div id="signalNum" class="text-xs font-mono opacity-40">---</div>
+                    </div>
+                    <!-- Signal Small Progress Bar -->
+                    <div class="w-full bg-white/5 h-1 rounded-full mt-3 overflow-hidden">
+                        <div id="signalBar" class="h-full bg-red-500 transition-all" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EEG Oscilloscope -->
+            <div class="lg:col-span-9">
+                <div class="stat-card p-6 rounded-[2.5rem] relative h-full">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3
+                            class="text-xs font-black uppercase tracking-widest flex items-center gap-2.5 text-emerald-400">
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Raw Waveform (μV/ms)
+                        </h3>
+                        <div
+                            class="text-[9px] text-slate-500 font-mono bg-black/50 px-3 py-1.5 rounded-lg border border-white/5 uppercase tracking-tighter">
+                            Range: ±500μV | Window: 1000ms
+                        </div>
+                    </div>
+                    <div class="raw-canvas-container">
+                        <canvas id="rawCanvas" class="raw-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Secondary Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- FFT Chart -->
+            <div class="lg:col-span-8">
+                <div class="stat-card p-8 rounded-[2.5rem] min-h-[400px]">
+                    <h3 class="text-xs font-black uppercase tracking-widest mb-6 text-cyan-400">Frequency Spectrum
+                        Analyzer</h3>
+                    <div class="h-[320px]">
+                        <canvas id="fftChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Brainwave Power Bands -->
+            <div class="lg:col-span-4 space-y-4">
+                <div class="stat-card p-6 rounded-[2rem]">
+                    <h3 class="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-6">Brainwave Power
+                        Ratios</h3>
+                    <div id="bandContainer" class="space-y-4">
+                        <!-- Delta -->
+                        <div class="group">
+                            <div class="flex justify-between text-[10px] mb-1.5 px-1">
+                                <span class="font-black text-red-500 tracking-tighter">DELTA (0.5-4Hz)</span>
+                                <span id="val_delta" class="font-mono text-slate-400">0%</span>
+                            </div>
+                            <div class="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[1px]">
+                                <div id="bar_delta"
+                                    class="h-full bg-red-500 transition-all duration-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]"
+                                    style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <!-- Theta -->
+                        <div class="group">
+                            <div class="flex justify-between text-[10px] mb-1.5 px-1">
+                                <span class="font-black text-orange-400 tracking-tighter">THETA (4-8Hz)</span>
+                                <span id="val_theta" class="font-mono text-slate-400">0%</span>
+                            </div>
+                            <div class="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[1px]">
+                                <div id="bar_theta" class="h-full bg-orange-400 transition-all duration-500"
+                                    style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <!-- Alpha -->
+                        <div class="group">
+                            <div class="flex justify-between text-[10px] mb-1.5 px-1">
+                                <span class="font-black text-emerald-400 tracking-tighter">ALPHA (8-13Hz)</span>
+                                <span id="val_alpha" class="font-mono text-slate-400">0%</span>
+                            </div>
+                            <div class="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[1px]">
+                                <div id="bar_alpha"
+                                    class="h-full bg-emerald-400 transition-all duration-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+                                    style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <!-- Beta -->
+                        <div class="group">
+                            <div class="flex justify-between text-[10px] mb-1.5 px-1">
+                                <span class="font-black text-blue-400 tracking-tighter">BETA (13-30Hz)</span>
+                                <span id="val_beta" class="font-mono text-slate-400">0%</span>
+                            </div>
+                            <div class="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[1px]">
+                                <div id="bar_beta"
+                                    class="h-full bg-blue-400 transition-all duration-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]"
+                                    style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <!-- Gamma -->
+                        <div class="group">
+                            <div class="flex justify-between text-[10px] mb-1.5 px-1">
+                                <span class="font-black text-purple-400 tracking-tighter">GAMMA (30-40Hz)</span>
+                                <span id="val_gamma" class="font-mono text-slate-400">0%</span>
+                            </div>
+                            <div class="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[1px]">
+                                <div id="bar_gamma" class="h-full bg-purple-400 transition-all duration-500"
+                                    style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Debug/Log area -->
+                <div class="stat-card p-6 rounded-2xl">
+                    <div id="consoleLog"
+                        class="h-24 overflow-y-auto font-mono text-[9px] text-slate-600 custom-scrollbar leading-relaxed italic">
+                        > Waiting for device handshake...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /** Signal Processing & FFT */
+        class FFT {
+            constructor(n) {
+                this.n = n; this.m = Math.log2(n);
+                this.reverseTable = new Uint32Array(n);
+                for (let i = 0; i < n; i++) {
+                    let r = 0; for (let j = 0; j < this.m; j++) if ((i >> j) & 1) r |= 1 << (this.m - 1 - j);
+                    this.reverseTable[i] = r;
+                }
+            }
+            forward(real, imag) {
+                const n = this.n;
+                for (let i = 0; i < n; i++) {
+                    const r = this.reverseTable[i];
+                    if (i < r) { [real[i], real[r]] = [real[r], real[i]];[imag[i], imag[r]] = [imag[r], imag[i]]; }
+                }
+                for (let k = 1; k < n; k <<= 1) {
+                    const wr = Math.cos(Math.PI / k), wi = Math.sin(Math.PI / k);
+                    for (let j = 0; j < n; j += (k << 1)) {
+                        let ur = 1, ui = 0;
+                        for (let i = 0; i < k; i++) {
+                            const r = real[i + j + k], im = imag[i + j + k];
+                            const tr = r * ur - im * ui, ti = r * ui + im * ur;
+                            real[i + j + k] = real[i + j] - tr; imag[i + j + k] = imag[i + j] - ti;
+                            real[i + j] += tr; imag[i + j] += ti;
+                            const tu = ur; ur = tu * wr - ui * wi; ui = tu * wi + ui * wr;
+                        }
+                    }
+                }
+            }
+        }
+
+        class Biquad {
+            constructor(b, a) { this.b = b; this.a = a; this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; }
+            process(x) {
+                let y = (this.b[0] * x) + (this.b[1] * this.x1) + (this.b[2] * this.x2) - (this.a[1] * this.y1) - (this.a[2] * this.y2);
+                this.x2 = this.x1; this.x1 = x;
+                this.y2 = this.y1; this.y1 = y;
+                return y;
+            }
+        }
+
+        class EEGDeepFilter {
+            constructor() {
+                this.lp1 = new Biquad([0.0326, 0.0652, 0.0326], [1.0000, -1.4190, 0.5494]);
+                this.lp2 = new Biquad([0.0326, 0.0652, 0.0326], [1.0000, -1.1626, 0.3930]);
+                this.hp1 = new Biquad([0.9957, -1.9914, 0.9957], [1.0000, -1.9914, 0.9914]);
+                this.hp2 = new Biquad([0.9957, -1.9914, 0.9957], [1.0000, -1.9914, 0.9914]);
+            }
+            process(x) { return this.hp2.process(this.hp1.process(this.lp2.process(this.lp1.process(x)))); }
+        }
+
+        const deepFilter = new EEGDeepFilter();
+        const fftProcessor = new FFT(512);
+
+        // --- BUFFERS & STATE ---
+        let bluetoothDevice = null;
+        let parserState = 'SYNC1';
+        let pLength = 0, payloadBuffer = [], checksumAccumulator = 0, bytesReceivedCount = 0;
+
+        let currentAttention = 0, currentMeditation = 0, currentSignal = 200;
+
+        const FS = 512;
+        const fftInput = new Float32Array(512).fill(0);
+        const oscilloscopeBuffer = new Array(512).fill(0);
+        const canvas = document.getElementById('rawCanvas');
+        const ctx_raw = canvas.getContext('2d');
+
+        // --- FFT CHART ---
+        const ctx_fft = document.getElementById('fftChart').getContext('2d');
+        const fftChart = new Chart(ctx_fft, {
+            type: 'bar',
+            data: { labels: Array.from({ length: 64 }, (_, i) => `${i}Hz`), datasets: [{ label: 'Power', data: Array(64).fill(0), backgroundColor: 'rgba(16, 185, 129, 0.3)', borderColor: '#10b981', borderWidth: 1 }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.02)' }, ticks: { display: false } }, x: { grid: { display: false }, ticks: { color: '#475569', font: { size: 8 } } } }, plugins: { legend: { display: false } }, animation: { duration: 0 } }
+        });
+
+        // --- UI UPDATER FUNCTIONS ---
+        function updateESenseUI() {
+            // Cập nhật Attention ngay lập tức khi nhận được gói tin
+            document.getElementById('attentionVal').textContent = currentAttention;
+            document.getElementById('attentionBar').style.height = `${currentAttention}%`;
+
+            // Cập nhật Meditation/Relax ngay lập tức
+            document.getElementById('meditationVal').textContent = currentMeditation;
+            document.getElementById('meditationBar').style.height = `${currentMeditation}%`;
+        }
+
+        function updateSignalUI() {
+            const card = document.getElementById('signalCard');
+            const desc = document.getElementById('signalDesc');
+            const num = document.getElementById('signalNum');
+            const bar = document.getElementById('signalBar');
+
+            num.textContent = `CODE: ${currentSignal}`;
+            bar.style.width = `${(currentSignal / 200) * 100}%`;
+
+            if (currentSignal === 0) {
+                card.className = "stat-card p-5 rounded-2xl border-l-4 border-emerald-500 transition-colors duration-500";
+                desc.textContent = "Excellent";
+                desc.className = "text-lg font-black text-emerald-400 tracking-tighter uppercase";
+                bar.className = "h-full bg-emerald-500 transition-all";
+            } else if (currentSignal === 200) {
+                card.className = "stat-card p-5 rounded-2xl border-l-4 border-red-500 transition-colors duration-500";
+                desc.textContent = "Off-Head";
+                desc.className = "text-lg font-black text-red-500 tracking-tighter uppercase";
+                bar.className = "h-full bg-red-500 transition-all";
+            } else {
+                card.className = "stat-card p-5 rounded-2xl border-l-4 border-yellow-500 transition-colors duration-500";
+                desc.textContent = "Noisy";
+                desc.className = "text-lg font-black text-yellow-500 tracking-tighter uppercase";
+                bar.className = "h-full bg-yellow-500 transition-all";
+            }
+        }
+
+        // --- OSCILLOSCOPE RENDERING WITH AXIS ---
+        function renderWave() {
+            const width = canvas.width, height = canvas.height;
+            const paddingLeft = 50, paddingBottom = 30, paddingTop = 15, paddingRight = 15;
+            const drawWidth = width - paddingLeft - paddingRight, drawHeight = height - paddingBottom - paddingTop;
+            const centerY = paddingTop + drawHeight / 2;
+
+            ctx_raw.clearRect(0, 0, width, height);
+
+            // Grid & Axes Labels
+            ctx_raw.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+            ctx_raw.lineWidth = 1;
+            ctx_raw.fillStyle = '#475569';
+            ctx_raw.font = '9px "JetBrains Mono", monospace';
+
+            // Y-Axis Labels (±500μV)
+            ctx_raw.textAlign = 'right';
+            for (let v = -500; v <= 500; v += 250) {
+                const y = centerY - (v * (drawHeight / 1000));
+                ctx_raw.beginPath();
+                ctx_raw.moveTo(paddingLeft, y); ctx_raw.lineTo(width - paddingRight, y);
+                ctx_raw.stroke();
+                ctx_raw.fillText(`${v > 0 ? '+' : ''}${v}μV`, paddingLeft - 8, y + 3);
+            }
+
+            // X-Axis Labels (1000ms window)
+            ctx_raw.textAlign = 'center';
+            for (let t = 0; t <= 1000; t += 250) {
+                const xPos = paddingLeft + (t / 1000) * drawWidth;
+                ctx_raw.beginPath();
+                ctx_raw.moveTo(xPos, paddingTop); ctx_raw.lineTo(xPos, height - paddingBottom);
+                ctx_raw.stroke();
+                ctx_raw.fillText(`${t}ms`, xPos, height - 8);
+            }
+
+            // Waveform
+            ctx_raw.strokeStyle = '#10b981';
+            ctx_raw.lineWidth = 2;
+            ctx_raw.shadowBlur = 6;
+            ctx_raw.shadowColor = 'rgba(16, 185, 129, 0.4)';
+            ctx_raw.beginPath();
+            const stepX = drawWidth / oscilloscopeBuffer.length;
+            for (let i = 0; i < oscilloscopeBuffer.length; i++) {
+                const y = centerY - (oscilloscopeBuffer[i] * (drawHeight / 1000));
+                const x = paddingLeft + i * stepX;
+                if (i === 0) ctx_raw.moveTo(x, y); else ctx_raw.lineTo(x, y);
+            }
+            ctx_raw.stroke();
+            ctx_raw.shadowBlur = 0;
+            requestAnimationFrame(renderWave);
+        }
+
+        function calculateBands(spectrum) {
+            const sum = (s, e) => spectrum.slice(s, e).reduce((a, b) => a + b, 0);
+            const d = sum(1, 4), t = sum(4, 8), a = sum(8, 13), b = sum(13, 30), g = sum(30, 40);
+            const total = d + t + a + b + g || 1;
+            const up = (id, p) => {
+                const pct = Math.round((p / total) * 100);
+                document.getElementById(`val_${id}`).textContent = `${pct}%`;
+                document.getElementById(`bar_${id}`).style.width = `${pct}%`;
+            };
+            up('delta', d); up('theta', t); up('alpha', a); up('beta', b); up('gamma', g);
+        }
+
+        function performFFT() {
+            const real = new Float32Array(fftInput), imag = new Float32Array(512).fill(0);
+            fftProcessor.forward(real, imag);
+            const mags = new Float32Array(64);
+            for (let i = 0; i < 64; i++) mags[i] = Math.sqrt(real[i] ** 2 + imag[i] ** 2);
+            fftChart.data.datasets[0].data = Array.from(mags); fftChart.update(); calculateBands(mags);
+        }
+
+        function log(msg) {
+            const c = document.getElementById('consoleLog');
+            const e = document.createElement('div');
+            e.textContent = `> ${msg}`;
+            c.prepend(e);
+        }
+
+        // --- THINKGEAR PARSER CORE ---
+        let fftCounter = 0;
+        function handleByte(byte) {
+            bytesReceivedCount++;
+            switch (parserState) {
+                case 'SYNC1': if (byte === 0xAA) parserState = 'SYNC2'; break;
+                case 'SYNC2': if (byte === 0xAA) parserState = 'PLENGTH'; else parserState = 'SYNC1'; break;
+                case 'PLENGTH': if (byte < 170) { pLength = byte; payloadBuffer = []; checksumAccumulator = 0; parserState = 'PAYLOAD'; } else parserState = 'SYNC1'; break;
+                case 'PAYLOAD':
+                    payloadBuffer.push(byte);
+                    checksumAccumulator += byte;
+                    if (payloadBuffer.length === pLength) parserState = 'CHECKSUM';
+                    break;
+                case 'CHECKSUM':
+                    if (byte === ((~(checksumAccumulator & 0xFF)) & 0xFF)) {
+                        let i = 0;
+                        while (i < payloadBuffer.length) {
+                            while (payloadBuffer[i] === 0x55) i++; // Bỏ qua EXCODE
+                            let code = payloadBuffer[i++];
+                            let vLen = (code >= 0x80) ? payloadBuffer[i++] : 1;
+                            let val = payloadBuffer.slice(i, i + vLen);
+
+                            // --- LOGIC PARSING CHI TIẾT ---
+                            if (code === 0x02) {
+                                currentSignal = val[0];
+                                updateSignalUI(); // Cập nhật ngay khi có gói tin tín hiệu
+                            }
+                            if (code === 0x04) {
+                                currentAttention = val[0];
+                                updateESenseUI(); // Cập nhật ngay khi có gói tin tập trung
+                            }
+                            if (code === 0x05) {
+                                currentMeditation = val[0];
+                                updateESenseUI(); // Cập nhật ngay khi có gói tin thư giãn
+                            }
+                            if (code === 0x80) {
+                                let raw = (val[0] << 8) | val[1]; if (raw >= 32768) raw -= 65536;
+                                const f = deepFilter.process(raw);
+                                oscilloscopeBuffer.shift(); oscilloscopeBuffer.push(f); fftInput[fftCounter++] = f;
+                                if (fftCounter >= 512) { performFFT(); fftCounter = 0; }
+                            }
+                            i += vLen;
+                        }
+                    }
+                    parserState = 'SYNC1';
+                    break;
+            }
+        }
+
+        // --- BLUETOOTH ---
+        async function connect() {
+            try {
+                log("Scanning for MindLink...");
+                const options = {
+                    filters: [
+                        { namePrefix: 'A' }, { namePrefix: 'B' }, { namePrefix: 'C' }, { namePrefix: 'D' },
+                        { namePrefix: 'E' }, { namePrefix: 'F' }, { namePrefix: 'G' }, { namePrefix: 'H' },
+                        { namePrefix: 'I' }, { namePrefix: 'J' }, { namePrefix: 'K' }, { namePrefix: 'L' },
+                        { namePrefix: 'M' }, { namePrefix: 'N' }, { namePrefix: 'O' }, { namePrefix: 'P' },
+                        { namePrefix: 'Q' }, { namePrefix: 'R' }, { namePrefix: 'S' }, { namePrefix: 'T' },
+                        { namePrefix: 'M' }, { namePrefix: 'B' }, { namePrefix: 'H' }
+                    ],
+                    optionalServices: ['0000ff10-0000-1000-8000-00805f9b34fb', '0000ffe0-0000-1000-8000-00805f9b34fb']
+                };
+
+                const device = await navigator.bluetooth.requestDevice(options);
+                log(`Connected: ${device.name}`);
+
+                const server = await device.gatt.connect();
+                document.getElementById('statusDot').className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]";
+                document.getElementById('statusText').textContent = "Active";
+                document.getElementById('connectBtn').textContent = "STOP";
+
+                const services = await server.getPrimaryServices();
+                let targetChar = null;
+                for (const s of services) {
+                    const cs = await s.getCharacteristics();
+                    targetChar = cs.find(c => c.properties.notify);
+                    if (targetChar) break;
+                }
+
+                if (!targetChar) throw new Error("No data characteristic found.");
+
+                await targetChar.startNotifications();
+                targetChar.addEventListener('characteristicvaluechanged', (e) => {
+                    const dv = e.target.value;
+                    for (let i = 0; i < dv.byteLength; i++) handleByte(dv.getUint8(i));
+                });
+
+                bluetoothDevice = device;
+                device.addEventListener('gattserverdisconnected', reset);
+            } catch (err) {
+                log(`Error: ${err.message}`);
+                reset();
+            }
+        }
+
+        function reset() {
+            document.getElementById('statusDot').className = "w-2 h-2 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.6)]";
+            document.getElementById('statusText').textContent = "Disconnected";
+            document.getElementById('connectBtn').textContent = "KẾT NỐI THIẾT BỊ";
+            currentSignal = 200; updateSignalUI();
+        }
+
+        function resize() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth; canvas.height = container.clientHeight;
+        }
+        window.addEventListener('resize', resize); resize(); renderWave();
+
+        document.getElementById('connectBtn').addEventListener('click', () => {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) bluetoothDevice.gatt.disconnect();
+            else connect();
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,35 @@
+# 1. Môi trường & Bảo mật (Environment Files)
+.env
+.env.*
+!.env.example
+
+# 2. Node.js (Cho Backend & Frontend)
+node_modules/
+
+# File build của React/Vite
+dist/
+build/
+
+# Log lỗi npm/yarn
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 3. Python (Cho thư mục Edge)
+# Môi trường ảo (Virtual Environments)
+venv/
+env/
+.venv/
+
+# File cache và bytecode của Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 4. OS & Trình soạn thảo (IDE)
+# VS Code
+.vscode/
+
+# Hệ điều hành (Windows/macOS)
+.DS_Store
+Thumbs.db
