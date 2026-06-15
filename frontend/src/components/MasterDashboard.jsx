@@ -40,6 +40,14 @@ const MasterDashboard = () => {
     frame: null,
   });
 
+  // STATE CHỨA 4 CHỈ SỐ AI TỔNG HỢP
+  const [aiMetrics, setAiMetrics] = useState({
+    focus: 0,
+    relaxation: 0,
+    stress: 0,
+    fatigue: 0,
+  });
+
   const [waveData, setWaveData] = useState([]);
   const [spectrumData, setSpectrumData] = useState([]);
   const [logMessages, setLogMessages] = useState([
@@ -49,7 +57,6 @@ const MasterDashboard = () => {
 
   useEffect(() => {
     socket.on("sensor_data", (data) => {
-      // Đảm bảo dữ liệu vision không bị undefined để tránh lỗi toUpperCase()
       const sanitizedData = {
         ...data,
         vision: data.vision || {
@@ -63,8 +70,69 @@ const MasterDashboard = () => {
 
       setSystemData(sanitizedData);
       const eeg = sanitizedData.eeg;
+      const vis = sanitizedData.vision;
 
-      // 1. THUẬT TOÁN TÁI TẠO RAW WAVEFORM
+      // ========================================================
+      // 🧠 THUẬT TOÁN SENSOR FUSION (HỢP NHẤT DỮ LIỆU FRONTEND)
+      // ========================================================
+      const att = eeg.attention || 0;
+      const med = eeg.meditation || 0;
+      const head = vis.head_pose_state || "";
+      const gaze = vis.gaze_state || "";
+      const emo = (vis.emotion || "").toUpperCase();
+
+      const scoreHead =
+        head.includes("Nhìn thẳng") || head.includes("Nhin Thang")
+          ? 100
+          : head.includes("Không") || head.includes("No")
+            ? 0
+            : 30;
+      const scoreGaze =
+        gaze.includes("Nhìn thẳng") || gaze.includes("Nhin Thang")
+          ? 100
+          : gaze.includes("Không") || gaze.includes("No")
+            ? 0
+            : 40;
+
+      let scoreEmoFocus = 100;
+      if (emo.includes("MỆT") || emo.includes("MET")) scoreEmoFocus = 10;
+      else if (
+        emo.includes("BUỒN") ||
+        emo.includes("BUON") ||
+        emo.includes("KHÓ") ||
+        emo.includes("KHO")
+      )
+        scoreEmoFocus = 40;
+
+      let focusPercent = att * 0.6 + scoreHead * 0.2 + scoreGaze * 0.2;
+
+      let emoRelaxScore =
+        emo.includes("BÌNH THƯỜNG") || emo.includes("VUI")
+          ? 100
+          : emo.includes("MỆT")
+            ? 40
+            : 10;
+      let relaxPercent = med * 0.8 + emoRelaxScore * 0.2;
+
+      let baseStress = att - med;
+      let stressPercent = baseStress > 0 ? baseStress : 0;
+      if (emo.includes("TỨC") || emo.includes("KHÓ")) stressPercent += 30;
+
+      let fatiguePercent = 100 - att;
+      if (emo.includes("MỆT") || emo.includes("MET"))
+        fatiguePercent = Math.max(85, fatiguePercent);
+
+      const clamp = (num) => Math.max(0, Math.min(100, Math.round(num)));
+      setAiMetrics({
+        focus: clamp(focusPercent),
+        relaxation: clamp(relaxPercent),
+        stress: clamp(stressPercent),
+        fatigue: clamp(fatiguePercent),
+      });
+
+      // ========================================================
+      // TÁI TẠO WAVEFORM & SPECTRUM
+      // ========================================================
       const totalPower =
         (eeg.delta || 0) +
           (eeg.theta || 0) +
@@ -90,38 +158,29 @@ const MasterDashboard = () => {
         v +=
           ((eeg.low_gamma + eeg.mid_gamma) / totalPower) *
           Math.sin(2 * Math.PI * 40 * t);
-
         v = v * 800 + (Math.random() - 0.5) * 15;
         newWave.push({ ms: i * 10, uv: v });
       }
       setWaveData(newWave);
 
-      // 2. THUẬT TOÁN TÁI TẠO PHỔ TẦN SỐ (Đã tối ưu 2Hz/cột)
       let newSpectrum = [];
-      // Chạy bước nhảy i += 2 để có các mốc 0, 2, 4... 62
       for (let i = 0; i <= 62; i += 2) {
         let p = 0;
-
-        // Gán giá trị dựa trên dải tần số tương ứng
         if (i >= 0 && i <= 3) p = eeg.delta / 2;
         else if (i >= 4 && i <= 7) p = eeg.theta / 3;
         else if (i >= 8 && i <= 12) p = (eeg.low_alpha + eeg.high_alpha) / 4;
         else if (i >= 13 && i <= 30) p = (eeg.low_beta + eeg.high_beta) / 10;
         else if (i >= 31 && i <= 60) p = (eeg.low_gamma + eeg.mid_gamma) / 15;
-
-        // Thêm hiệu ứng nhảy cột ngẫu nhiên
         p = p * (0.5 + Math.random() * 0.5);
-
-        // Đẩy vào mảng với nhãn là i + "Hz"
         newSpectrum.push({ hz: `${i}Hz`, power: Math.floor(p) });
       }
       setSpectrumData(newSpectrum);
 
-      // Log hệ thống - Fix lỗi hiển thị undefined trong log
+      // Log hệ thống
       if (Math.random() > 0.7) {
         setLogMessages((prev) =>
           [
-            `> Sync | Head: ${sanitizedData.vision.head_pose_state || "N/A"} | Att: ${eeg.attention}`,
+            `> Sync | Head: ${sanitizedData.vision.head_pose_state} | Att: ${eeg.attention}`,
             ...prev,
           ].slice(0, 10),
         );
@@ -157,6 +216,33 @@ const MasterDashboard = () => {
     padding: "24px",
     transition: "all 0.4s ease",
   };
+
+  const cognitiveStateConfig = [
+    {
+      name: "MỨC ĐỘ TẬP TRUNG",
+      val: aiMetrics.focus,
+      color: "#10b981",
+      bg: "rgba(16, 185, 129, 0.1)",
+    },
+    {
+      name: "ĐỘ THƯ GIÃN (TĨNH TÂM)",
+      val: aiMetrics.relaxation,
+      color: "#06b6d4",
+      bg: "rgba(6, 182, 212, 0.1)",
+    },
+    {
+      name: "ÁP LỰC (CĂNG THẲNG)",
+      val: aiMetrics.stress,
+      color: "#f59e0b",
+      bg: "rgba(245, 158, 11, 0.1)",
+    },
+    {
+      name: "NGUY CƠ MỆT MỎI",
+      val: aiMetrics.fatigue,
+      color: "#ef4444",
+      bg: "rgba(239, 68, 68, 0.1)",
+    },
+  ];
 
   return (
     <div
@@ -249,7 +335,7 @@ const MasterDashboard = () => {
           marginBottom: "24px",
         }}
       >
-        {/* COL 1: METRICS */}
+        {/* COL 1: ATTENTION, MEDITATION & AI METRICS */}
         <div
           style={{
             gridColumn: "span 3",
@@ -258,118 +344,199 @@ const MasterDashboard = () => {
             gap: "24px",
           }}
         >
-          <div
-            style={{
-              ...cardStyle,
-              position: "relative",
-              overflow: "hidden",
-              borderBottom: "4px solid rgba(59, 130, 246, 0.5)",
-              padding: "20px",
-            }}
-          >
+          {/* 🔥 KHỐI MỚI: RAW EEG (ĐẶT NẰM NGANG NHAU ĐỂ TIẾT KIỆM DIỆN TÍCH) */}
+          <div style={{ display: "flex", gap: "15px" }}>
+            {/* RAW ATTENTION */}
             <div
               style={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                width: "100%",
-                height: `${systemData.eeg.attention}%`,
-                background: "rgba(59, 130, 246, 0.1)",
-                transition: "height 0.7s ease",
-              }}
-            ></div>
-            <h4
-              style={{
-                color: "#60a5fa",
-                fontSize: "10px",
-                fontWeight: "900",
-                letterSpacing: "2px",
-                margin: "0 0 5px 0",
-              }}
-            >
-              ATTENTION
-            </h4>
-            <div
-              style={{
-                fontSize: "60px",
-                fontWeight: "900",
-                lineHeight: "1",
-                margin: "0 0 5px 0",
-                zIndex: 1,
+                ...cardStyle,
+                flex: 1,
+                padding: "15px",
+                borderBottom: "4px solid rgba(59, 130, 246, 0.5)",
                 position: "relative",
+                overflow: "hidden",
               }}
             >
-              {systemData.eeg.attention}
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  width: "100%",
+                  height: `${systemData.eeg.attention}%`,
+                  background: "rgba(59, 130, 246, 0.1)",
+                  transition: "height 0.7s ease",
+                }}
+              ></div>
+              <h4
+                style={{
+                  color: "#60a5fa",
+                  fontSize: "9px",
+                  fontWeight: "900",
+                  letterSpacing: "1px",
+                  margin: "0 0 5px 0",
+                }}
+              >
+                ATTENTION
+              </h4>
+              <div
+                style={{
+                  fontSize: "36px",
+                  fontWeight: "900",
+                  lineHeight: "1",
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                {systemData.eeg.attention}
+              </div>
             </div>
+
+            {/* RAW MEDITATION */}
             <div
               style={{
-                fontSize: "8px",
-                color: "#64748b",
-                fontWeight: "bold",
-                textTransform: "uppercase",
-                fontStyle: "italic",
+                ...cardStyle,
+                flex: 1,
+                padding: "15px",
+                borderBottom: "4px solid rgba(6, 182, 212, 0.5)",
+                position: "relative",
+                overflow: "hidden",
               }}
             >
-              Mental Focus
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  width: "100%",
+                  height: `${systemData.eeg.meditation}%`,
+                  background: "rgba(6, 182, 212, 0.1)",
+                  transition: "height 0.7s ease",
+                }}
+              ></div>
+              <h4
+                style={{
+                  color: "#22d3ee",
+                  fontSize: "9px",
+                  fontWeight: "900",
+                  letterSpacing: "1px",
+                  margin: "0 0 5px 0",
+                }}
+              >
+                RELAXATION
+              </h4>
+              <div
+                style={{
+                  fontSize: "36px",
+                  fontWeight: "900",
+                  lineHeight: "1",
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                {systemData.eeg.meditation}
+              </div>
             </div>
           </div>
 
+          {/* KHỐI 4 CHỈ SỐ AI */}
           <div
             style={{
               ...cardStyle,
-              position: "relative",
-              overflow: "hidden",
-              borderBottom: "4px solid rgba(6, 182, 212, 0.5)",
+              flex: 1,
               padding: "20px",
+              display: "flex",
+              flexDirection: "column",
             }}
           >
-            <div
+            <h3
               style={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                width: "100%",
-                height: `${systemData.eeg.meditation}%`,
-                background: "rgba(6, 182, 212, 0.1)",
-                transition: "height 0.7s ease",
-              }}
-            ></div>
-            <h4
-              style={{
-                color: "#22d3ee",
+                color: "#64748b",
                 fontSize: "10px",
                 fontWeight: "900",
                 letterSpacing: "2px",
-                margin: "0 0 5px 0",
+                margin: "0 0 20px 0",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
               }}
             >
-              RELAXATION
-            </h4>
+              <span
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  background: "#8b5cf6",
+                  borderRadius: "50%",
+                }}
+              ></span>
+              AI COGNITIVE STATES
+            </h3>
+
             <div
               style={{
-                fontSize: "60px",
-                fontWeight: "900",
-                lineHeight: "1",
-                margin: "0 0 5px 0",
-                zIndex: 1,
-                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                gap: "20px",
+                flex: 1,
+                justifyContent: "center",
               }}
             >
-              {systemData.eeg.meditation}
-            </div>
-            <div
-              style={{
-                fontSize: "8px",
-                color: "#64748b",
-                fontWeight: "bold",
-                textTransform: "uppercase",
-                fontStyle: "italic",
-              }}
-            >
-              Calmness State
+              {cognitiveStateConfig.map((item, idx) => (
+                <div key={idx}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-end",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: "bold",
+                        color: "#94a3b8",
+                      }}
+                    >
+                      {item.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: "900",
+                        color: item.color,
+                      }}
+                    >
+                      {item.val}%
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "12px",
+                      background: "rgba(0,0,0,0.4)",
+                      borderRadius: "6px",
+                      overflow: "hidden",
+                      border: "1px solid rgba(255,255,255,0.05)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${item.val}%`,
+                        background: item.color,
+                        boxShadow: `0 0 10px ${item.color}`,
+                        transition: "width 0.3s ease-out",
+                        borderRadius: "6px",
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
+          {/* SIGNAL QUALITY */}
           <div
             style={{
               ...cardStyle,
@@ -539,7 +706,6 @@ const MasterDashboard = () => {
                     fontSize: "12px",
                   }}
                 >
-                  {/* Sử dụng Optional Chaining ?. để tránh lỗi toUpperCase() */}
                   EMOTION: {(systemData.vision?.emotion || "N/A").toUpperCase()}
                 </span>
               </div>

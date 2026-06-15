@@ -1,4 +1,8 @@
+import joblib
+import pandas as pd
 import os
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  
 os.environ['GLOG_minloglevel'] = '2'
 import time
@@ -6,15 +10,18 @@ import cv2
 import socketio
 
 from tgam_reader import TGAMReader
-# from mock_tgam import TGAMReader
 from vision_tracker import VisionTracker
+# from mock_tgam import TGAMReader
 
-# KHỞI TẠO ĐƯỜNG TRUYỀN SIÊU TỐC
+# from mock_tgam_focus import TGAMReader
+# from mock_vision_focus import VisionTracker
+
+# from mock_tgam_sleep import TGAMReader
+# from mock_vision_sleep import VisionTracker
+
 sio = socketio.Client()
 
 def main():
-
-    # Kết nối tới Server Node.js
     try:
         sio.connect('http://localhost:5000')
         print("✅ Đã kết nối Socket.io tới Server!")
@@ -27,12 +34,26 @@ def main():
     vision = VisionTracker()
     last_send_time = time.time()
     last_print_time = time.time()
+
+    # 🧠 NẠP MÔ HÌNH AI ĐÃ HUẤN LUYỆN
+    print("🧠 Đang nạp mô hình trí tuệ nhân tạo AI...")
+    try:
+        model = joblib.load("optimind_ai_model.pkl")
+        le_head = joblib.load("encoder_head.pkl")
+        le_gaze = joblib.load("encoder_gaze.pkl")
+        le_emo = joblib.load("encoder_emotion.pkl") 
+        ai_ready = True
+        print("✅ Đã nạp thành công bộ não AI!")
+    except Exception as e:
+        print(f"⚠️ Không tìm thấy file Mô hình AI. Vui lòng chạy file train_model.py trước! Lỗi: {e}")
+        ai_ready = False
+
     try:
         while True:
             vision_data, frame_b64, display_frame = vision.process_frame()
             if display_frame is None: break
             current_time = time.time()
-            # 🔥 CHỈNH THỜI GIAN: Đẩy lên web mỗi 0.04 giây (25 FPS) thay vì 1.0 giây
+            
             if time.time() - last_send_time >= 0.04:
                 raw_eeg = tgam.get_data()
 
@@ -40,32 +61,62 @@ def main():
                 gaze = vision_data["gaze_state"]
                 att = raw_eeg["attention"]
                 med = raw_eeg["meditation"]
+                
+                alpha_sum = raw_eeg["low_alpha"] + raw_eeg["high_alpha"]
+                beta_sum = raw_eeg["low_beta"] + raw_eeg["high_beta"]
+                gamma_sum = raw_eeg["low_gamma"] + raw_eeg["mid_gamma"]
+                theta_val = raw_eeg["theta"]
+                delta_val = raw_eeg["delta"]
 
-                # --- MA TRẬN CHẨN ĐOÁN  ---
-                final_state = "Bình thường"
+                # ==========================================================
+                # 🚀 MA TRẬN CHẨN ĐOÁN 
+                # ==========================================================
+                final_state = "Đang phân tích..."
+                
                 if raw_eeg["signal"] > 50:
                     final_state = "Đang tìm tín hiệu TGAM..."
-                elif head != "Nhìn thẳng" or gaze != "Nhìn thẳng":
-                    final_state = "Đang suy nghĩ (Nhìn ra ngoài)" if att > 60 else "Sao nhãng"
-                else: 
-                    if att >= 60:
-                        final_state = "Căng thẳng / Áp lực" if med < 30 else "Tập trung lý tưởng"
-                    elif att < 40:
-                        final_state = "Buồn ngủ / Mơ màng" if med > 60 else "Lơ đãng / Chán nản"
-                    else:
-                        final_state = "Trạng thái bình thường"
+                elif not ai_ready:
+                    final_state = "⚠️ Lỗi: Chưa Train Model AI"
+                else:
+                    try:
+                        head_encoded = le_head.transform([head])[0]
+                    except:
+                        head_encoded = 0 
+                    
+                    try:
+                        gaze_encoded = le_gaze.transform([gaze])[0]
+                    except:
+                        gaze_encoded = 0
+                    
+                    emo_text = vision_data.get("emotion", "Bình thường")
+                    try:
+                        emotion_encoded = le_emo.transform([emo_text])[0]
+                    except:
+                        emotion_encoded = 0
 
-                # --- ĐÓNG GÓI PAYLOAD  ---
+                    #  Xếp các chỉ số thành 1 dòng (Trật tự GIỐNG HỆT lúc train: 
+                    # 'Attention', 'Meditation', 'Alpha', 'Beta', 'Theta', 'Delta', 'Gamma', 'Head Pose', 'Gaze')
+                    current_features = [[
+                        att, med, 
+                        alpha_sum, beta_sum, theta_val, delta_val, gamma_sum, 
+                        head_encoded, gaze_encoded , emotion_encoded
+                    ]]
+                    
+                    #  Yêu cầu AI đưa ra phán đoán!
+                    prediction = model.predict(current_features)
+                    final_state = prediction[0] # Lấy chuỗi kết quả (VD: "Tập trung", "Sao nhãng")
+
+                # --- ĐÓNG GÓI PAYLOAD GỬI LÊN WEB ---
                 ui_payload = {
                     "eeg": {
                         "signal": raw_eeg["signal"],
                         "attention": att,
                         "meditation": med,
-                        "alpha": raw_eeg["low_alpha"] + raw_eeg["high_alpha"],
-                        "beta": raw_eeg["low_beta"] + raw_eeg["high_beta"],
-                        "gamma": raw_eeg["low_gamma"] + raw_eeg["mid_gamma"],
-                        "delta": raw_eeg["delta"],
-                        "theta": raw_eeg["theta"],
+                        "alpha": alpha_sum,
+                        "beta": beta_sum,
+                        "gamma": gamma_sum,
+                        "delta": delta_val,
+                        "theta": theta_val,
                         "low_alpha": raw_eeg["low_alpha"],
                         "high_alpha": raw_eeg["high_alpha"],
                         "low_beta": raw_eeg["low_beta"],
@@ -75,15 +126,14 @@ def main():
                     },
                     "raw_values": raw_eeg.get("raw_values", []), 
                     "vision": vision_data,
-                    "final_state": final_state,
+                    "final_state": final_state, 
                     "frame": frame_b64
                 }
 
-                # --- BẮN DỮ LIỆU QUA SOCKET NGAY LẬP TỨC ---
                 if sio.connected:
                     sio.emit('sensor_data', ui_payload)
                     if current_time - last_print_time >= 1.0:
-                        print(f"📡 Sent | Att: {att:<3} | Med: {med} | KL: {final_state}")
+                        print(f"📡 AI Chẩn đoán | Att: {att:<3} | Med: {med:<3} | Gaze: {gaze} | 👉 Kết quả: {final_state}")
                         last_print_time = current_time
                 last_send_time = time.time()
 
@@ -97,106 +147,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# import time
-# import requests
-# import cv2
-# import threading  
-
-# # from tgam_reader import TGAMReader
-# from mock_tgam import TGAMReader
-# from vision_tracker import VisionTracker
-
-# API_URL = "http://localhost:5000/api/eeg-data"
-
-# # HÀM GỬI DỮ LIỆU NGẦM (ASYNC)
-# def send_data_async(payload):
-#     try:
-#         requests.post(API_URL, json=payload, timeout=1.0)
-#     except Exception:
-#         pass
-
-# def main():
-#     print("="*60)
-#     print("🚀 OPTIMIND EDGE STATION IS ONLINE")
-#     print("📌 Mode: Multi-threaded Async Streaming")
-#     print("="*60)
-
-#     tgam = TGAMReader(port='COM3', baud_rate=57600)
-#     tgam.start()
-    
-#     vision = VisionTracker()
-#     last_send_time = time.time()
-
-#     try:
-#         while True:
-#             vision_data, frame_b64, display_frame = vision.process_frame()
-#             if display_frame is None: break
-
-#             # Chỉ đóng gói và đẩy dữ liệu lên Web mỗi 1 giây
-#             if time.time() - last_send_time >= 1.0:
-#                 raw_eeg = tgam.get_data()
-
-#                 head = vision_data["head_pose_state"]
-#                 gaze = vision_data["gaze_state"]
-#                 att = raw_eeg["attention"]
-#                 med = raw_eeg["meditation"]
-
-#                 # --- MA TRẬN CHẨN ĐOÁN  ---
-#                 final_state = "Bình thường"
-#                 if raw_eeg["signal"] > 50:
-#                     final_state = "Đang tìm tín hiệu TGAM..."
-#                 elif head != "Nhìn thẳng" or gaze != "Nhìn thẳng":
-#                     final_state = "Đang suy nghĩ (Nhìn ra ngoài)" if att > 60 else "Sao nhãng"
-#                 else: 
-#                     if att >= 60:
-#                         final_state = "Căng thẳng / Áp lực" if med < 30 else "Tập trung lý tưởng"
-#                     elif att < 40:
-#                         final_state = "Buồn ngủ / Mơ màng" if med > 60 else "Lơ đãng / Chán nản"
-#                     else:
-#                         final_state = "Trạng thái bình thường"
-
-#                 # --- ĐÓNG GÓI PAYLOAD ---
-#                 ui_payload = {
-#                     "eeg": {
-#                         "signal": raw_eeg["signal"],
-#                         "attention": att,
-#                         "meditation": med,
-#                         "alpha": raw_eeg["low_alpha"] + raw_eeg["high_alpha"],
-#                         "beta": raw_eeg["low_beta"] + raw_eeg["high_beta"],
-#                         "gamma": raw_eeg["low_gamma"] + raw_eeg["mid_gamma"],
-#                         "delta": raw_eeg["delta"],
-#                         "theta": raw_eeg["theta"],
-#                         "low_alpha": raw_eeg["low_alpha"],
-#                         "high_alpha": raw_eeg["high_alpha"],
-#                         "low_beta": raw_eeg["low_beta"],
-#                         "high_beta": raw_eeg["high_beta"],
-#                         "low_gamma": raw_eeg["low_gamma"],
-#                         "mid_gamma": raw_eeg["mid_gamma"]
-#                     },
-#                     "raw_values": raw_eeg.get("raw_values", []), 
-#                     "vision": vision_data,
-#                     "final_state": final_state,
-#                     "frame": frame_b64
-#                 }
-
-#                 # --- GỬI DỮ LIỆU BẰNG LUỒNG RIÊNG (Không gây giật lag) ---
-#                 thread = threading.Thread(target=send_data_async, args=(ui_payload,), daemon=True)
-#                 thread.start()
-                
-#                 print(f"📡 Sent | Att: {att:<3} | Med: {med}| KL: {final_state}")
-#                 last_send_time = time.time()
-
-#             # Hiển thị camera tại chỗ mượt mà
-#             # cv2.imshow("OptiMind - Edge Processing", display_frame)
-#             # if cv2.waitKey(1) & 0xFF == ord('q'):
-#             #     break
-
-#     except KeyboardInterrupt:
-#         print("\n🛑 Đang ngắt kết nối an toàn...")
-#     finally:
-#         vision.release()
-#         cv2.destroyAllWindows()
-
-# if __name__ == "__main__":
-#     main()
