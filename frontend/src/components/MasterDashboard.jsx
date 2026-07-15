@@ -73,55 +73,79 @@ const MasterDashboard = () => {
       const vis = sanitizedData.vision;
 
       // ========================================================
-      // 🧠 THUẬT TOÁN SENSOR FUSION (HỢP NHẤT DỮ LIỆU FRONTEND)
+      // 🧠 THUẬT TOÁN SENSOR FUSION (Đã đồng bộ với 7 cảm xúc DeepFace)
       // ========================================================
       const att = eeg.attention || 0;
       const med = eeg.meditation || 0;
-      const head = vis.head_pose_state || "";
-      const gaze = vis.gaze_state || "";
+      const head = (vis.head_pose_state || "").toUpperCase();
+      const gaze = (vis.gaze_state || "").toUpperCase();
       const emo = (vis.emotion || "").toUpperCase();
 
+      // 1. Chấm điểm Head và Gaze
       const scoreHead =
-        head.includes("Nhìn thẳng") || head.includes("Nhin Thang")
+        head.includes("NHÌN THẲNG") || head.includes("NHIN THANG")
           ? 100
-          : head.includes("Không") || head.includes("No")
+          : head.includes("KHÔNG") || head.includes("NO")
             ? 0
             : 30;
       const scoreGaze =
-        gaze.includes("Nhìn thẳng") || gaze.includes("Nhin Thang")
+        gaze.includes("NHÌN THẲNG") || gaze.includes("NHIN THANG")
           ? 100
-          : gaze.includes("Không") || gaze.includes("No")
+          : gaze.includes("KHÔNG") || gaze.includes("NO")
             ? 0
             : 40;
 
-      let scoreEmoFocus = 100;
-      if (emo.includes("MỆT") || emo.includes("MET")) scoreEmoFocus = 10;
-      else if (
-        emo.includes("BUỒN") ||
-        emo.includes("BUON") ||
-        emo.includes("KHÓ") ||
-        emo.includes("KHO")
-      )
-        scoreEmoFocus = 40;
+      // 2. Phân loại 7 cảm xúc DeepFace cho Độ Tập Trung
+      let scoreEmoFocus = 100; // Mặc định VUI VẺ, BÌNH THƯỜNG
+      if (emo.includes("NGẠC NHIÊN"))
+        scoreEmoFocus = 80; // Hơi mất tập trung nhẹ
+      else if (emo.includes("BUỒN") || emo.includes("SỢ"))
+        scoreEmoFocus = 40; // Tâm lý chán nản
+      else if (emo.includes("TỨC") || emo.includes("KHÓ CHỊU"))
+        scoreEmoFocus = 20; // Kích động, xao nhãng nặng
 
+      // TÍNH % TẬP TRUNG (FOCUS)
       let focusPercent = att * 0.6 + scoreHead * 0.2 + scoreGaze * 0.2;
 
-      let emoRelaxScore =
-        emo.includes("BÌNH THƯỜNG") || emo.includes("VUI")
-          ? 100
-          : emo.includes("MỆT")
-            ? 40
-            : 10;
+      // 3. Phân loại cảm xúc cho Độ Thư Giãn
+      let emoRelaxScore = 100; // VUI VẺ, BÌNH THƯỜNG
+      if (emo.includes("NGẠC NHIÊN")) emoRelaxScore = 60;
+      else if (emo.includes("BUỒN")) emoRelaxScore = 40;
+      else if (
+        emo.includes("TỨC") ||
+        emo.includes("SỢ") ||
+        emo.includes("KHÓ CHỊU")
+      )
+        emoRelaxScore = 10; // Đánh mất hoàn toàn sự tĩnh tâm
+
+      // TÍNH % THƯ GIÃN (RELAXATION)
       let relaxPercent = med * 0.8 + emoRelaxScore * 0.2;
 
+      // 4. TÍNH % CĂNG THẲNG (STRESS)
       let baseStress = att - med;
       let stressPercent = baseStress > 0 ? baseStress : 0;
-      if (emo.includes("TỨC") || emo.includes("KHÓ")) stressPercent += 30;
+      // Cộng hưởng áp lực nếu Camera thấy mặt đang tiêu cực
+      if (
+        emo.includes("TỨC") ||
+        emo.includes("KHÓ CHỊU") ||
+        emo.includes("SỢ")
+      ) {
+        stressPercent += 35;
+      }
 
+      // 5. TÍNH % MỆT MỎI (FATIGUE)
       let fatiguePercent = 100 - att;
-      if (emo.includes("MỆT") || emo.includes("MET"))
+      // Vì DeepFace không có chữ "Mệt mỏi", ta dùng logic kết hợp:
+      // Nếu mặt "Buồn bã" (cơ mặt xệ xuống) HOẶC "Bình thường" (mắt lờ đờ) CỘNG THÊM sóng Não đang tụt thấp (<30)
+      if ((emo.includes("BUỒN") || emo.includes("BÌNH THƯỜNG")) && att < 30) {
+        fatiguePercent = Math.max(75, fatiguePercent); // Ép thanh màu đỏ vọt lên báo động
+      }
+      // Giữ lại dòng này phòng trường hợp Sơn dùng file Excel cũ có chữ "Mệt mỏi" để test
+      if (emo.includes("MỆT") || emo.includes("MET")) {
         fatiguePercent = Math.max(85, fatiguePercent);
+      }
 
+      // 6. GHIM KẾT QUẢ (0 - 100)
       const clamp = (num) => Math.max(0, Math.min(100, Math.round(num)));
       setAiMetrics({
         focus: clamp(focusPercent),
