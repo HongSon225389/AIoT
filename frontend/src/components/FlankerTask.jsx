@@ -3,8 +3,11 @@ import axios from "axios";
 
 const FlankerTask = () => {
   const MAX_TRIALS = 15;
+  const TIME_LIMIT = 2000; // Cho phép tối đa 2 giây (2000ms) để phản xạ
+
   const taskStartTime = useRef(null);
   const isResponding = useRef(false);
+  const timeoutRef = useRef(null); // Bộ đếm thời gian chống treo màn hình
 
   const [currentStimulus, setCurrentStimulus] = useState("");
   const [startTime, setStartTime] = useState(0);
@@ -23,12 +26,56 @@ const FlankerTask = () => {
 
   const nextTrial = useCallback(() => {
     isResponding.current = false;
+
+    // Hủy đồng hồ đếm ngược của câu trước (nếu có)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
     const randomStimulus =
       stimuliList[Math.floor(Math.random() * stimuliList.length)];
     setCurrentStimulus(randomStimulus.text);
     setStartTime(Date.now());
     setMessage("");
-  }, []);
+
+    // HẸN GIỜ: Nếu sau 2 giây người dùng không bấm phím nào, tự động tính là SAI
+    timeoutRef.current = setTimeout(() => {
+      if (!isResponding.current) {
+        isResponding.current = true;
+        const now = Date.now();
+
+        // Ghi nhận sự kiện Bỏ lỡ (Miss) về Backend
+        axios
+          .post("http://localhost:5000/api/label-event", {
+            taskName: "Flanker",
+            stimulusType: randomStimulus.type,
+            reactionTime: TIME_LIMIT,
+            isCorrect: false,
+            label: "Distracted",
+            timestamp: now,
+          })
+          .catch((err) => console.error("Lỗi gửi label"));
+
+        setTestResults((prev) => [
+          ...prev,
+          { isCorrect: false, rt: TIME_LIMIT },
+        ]);
+        setMessage("🔴 QUÁ THỜI GIAN!");
+        setCurrentStimulus("");
+
+        // Chuyển sang câu tiếp theo
+        setTrialCount((prev) => {
+          if (prev + 1 >= MAX_TRIALS) {
+            setTimeout(() => {
+              setIsRunning(false);
+              setIsFinished(true);
+            }, 1000);
+          } else {
+            setTimeout(nextTrial, 1000);
+          }
+          return prev + 1;
+        });
+      }
+    }, TIME_LIMIT);
+  }, []); // Đã tối ưu dependencies
 
   const startGame = () => {
     taskStartTime.current = Date.now();
@@ -51,6 +98,9 @@ const FlankerTask = () => {
 
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         isResponding.current = true;
+        // HỦY HẸN GIỜ VÌ NGƯỜI DÙNG ĐÃ BẤM PHÍM KỊP LÚC
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
         const now = Date.now();
         const rt = now - startTime;
         const currentData = stimuliList.find((s) => s.text === currentStimulus);
@@ -74,27 +124,22 @@ const FlankerTask = () => {
         setMessage(isCorrect ? `🟢 +${rt}ms` : "🔴 Sai!");
         setCurrentStimulus("");
 
-        if (trialCount + 1 >= MAX_TRIALS) {
-          setTimeout(() => {
-            setIsRunning(false);
-            setIsFinished(true);
-          }, 1000);
-        } else {
-          setTrialCount((prev) => prev + 1);
-          setTimeout(nextTrial, 1000);
-        }
+        setTrialCount((prev) => {
+          if (prev + 1 >= MAX_TRIALS) {
+            setTimeout(() => {
+              setIsRunning(false);
+              setIsFinished(true);
+            }, 1000);
+          } else {
+            setTimeout(nextTrial, 1000);
+          }
+          return prev + 1;
+        });
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    isRunning,
-    currentStimulus,
-    startTime,
-    trialCount,
-    isFinished,
-    nextTrial,
-  ]);
+  }, [isRunning, currentStimulus, startTime, isFinished, nextTrial]);
 
   const downloadFullReport = async () => {
     const endTime = Date.now();
@@ -129,7 +174,7 @@ const FlankerTask = () => {
     const avgRT = Math.round(
       testResults.reduce((sum, r) => sum + r.rt, 0) / (testResults.length || 1),
     );
-    const isFocused = accuracy >= 75;
+    const isFocused = accuracy > 75 && avgRT < 750;
 
     return (
       <div

@@ -18,9 +18,7 @@ app.use(express.json({ limit: "50mb" }));
 
 connectDB();
 
-// 🔥 Lắng nghe luồng Python gửi lên
 io.on("connection", (socket) => {
-  // Khi nhận sự kiện 'sensor_data' từ Python, đẩy vào Controller xử lý
   socket.on("sensor_data", telemetryController.handleSocketData(socket));
 });
 

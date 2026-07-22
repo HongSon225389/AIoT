@@ -60,7 +60,6 @@ function App() {
           🎯 CALIBRATION LAB
         </button>
 
-        {/* Nút chuyển sang Tab Thu thập Dataset */}
         <button
           onClick={() => setActiveTab("dataset")}
           style={{
@@ -80,13 +79,13 @@ function App() {
 
       {/* --- KHU VỰC HIỂN THỊ NỘI DUNG CHÍNH --- */}
       <div style={{ padding: "20px" }}>
-        {/* Render Tab 1: Dashboard chính */}
+        {/* Tab 1: Dashboard chính */}
         {activeTab === "dashboard" && <MasterDashboard />}
 
-        {/* Render Tab 2: Calibration */}
+        {/* Tab 2: Calibration */}
         {activeTab === "calibration" && <CalibrationLab />}
 
-        {/* Render Tab 3: Dataset Lab (Chứa cả trạm đo và nút xuất file) */}
+        {/* Tab 3: Dataset Lab  */}
         {activeTab === "dataset" && (
           <div
             style={{

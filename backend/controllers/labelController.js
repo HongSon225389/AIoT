@@ -66,7 +66,7 @@ exports.exportMLDataset = async (req, res) => {
       eegRecords.forEach((record) => {
         dataset.push({
           "Local Time": record.local_time,
-          "Label (Target)": event.label, // Cái này AI sẽ dùng để học
+          "Label (Target)": event.label,
           Attention: record.eeg?.attention || 0,
           Meditation: record.eeg?.meditation || 0,
           Alpha: record.eeg?.alpha || 0,
@@ -81,7 +81,6 @@ exports.exportMLDataset = async (req, res) => {
       });
     }
 
-    // Trả về một mảng JSON rất lớn (hàng ngàn dòng)
     res.json(dataset);
   } catch (err) {
     res.status(500).json({ error: "Lỗi trích xuất Dataset ML" });

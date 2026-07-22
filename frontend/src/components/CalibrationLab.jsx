@@ -67,14 +67,14 @@ const CalibrationLab = () => {
           letterSpacing: "1px",
         }}
       >
-        HỆ THỐNG HIỆU CHUẨN DỮ LIỆU (GROUND TRUTH)
+        HỆ THỐNG HIỆU CHUẨN DỮ LIỆU
       </h2>
       <p style={{ color: "#64748b", fontSize: "13px", marginBottom: "40px" }}>
         Chọn bài test để bắt đầu quy trình gán nhãn dữ liệu sóng não & hành vi
       </p>
 
       <div style={{ display: "flex", justifyContent: "center", gap: "30px" }}>
-        {/* Card chọn Flanker */}
+        {/* Card Flanker */}
         <div
           onClick={() => setSelectedTask("flanker")}
           style={cardStyle("#38bdf8")}
@@ -91,7 +91,7 @@ const CalibrationLab = () => {
           </p>
         </div>
 
-        {/* Card chọn AX-CPT */}
+        {/* Card AX-CPT */}
         <div
           onClick={() => setSelectedTask("axcpt")}
           style={cardStyle("#10b981")}
@@ -110,7 +110,6 @@ const CalibrationLab = () => {
   );
 };
 
-// --- Helper Styles ---
 const cardStyle = (color) => ({
   backgroundColor: "#0f172a",
   padding: "40px 30px",

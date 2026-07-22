@@ -56,9 +56,10 @@ const MasterDashboard = () => {
   ]);
 
   useEffect(() => {
-    socket.on("sensor_data", (data) => {
+    const handleSensorData = (data) => {
       const sanitizedData = {
         ...data,
+        eeg: data.eeg || {},
         vision: data.vision || {
           emotion: "N/A",
           gaze: "N/A",
@@ -68,85 +69,219 @@ const MasterDashboard = () => {
         final_state: data.final_state || "Unknown",
       };
 
-      setSystemData(sanitizedData);
+      // Chỉ thay ảnh khi nhận được Base64 hợp lệ.
+      // Nếu Edge gửi chuỗi rỗng hoặc "SKIP", giữ lại ảnh cũ để tránh nhấp nháy.
+      setSystemData((prev) => ({
+        ...prev,
+        ...sanitizedData,
+        eeg: { ...prev.eeg, ...sanitizedData.eeg },
+        vision: { ...prev.vision, ...sanitizedData.vision },
+        frame:
+          sanitizedData.frame && sanitizedData.frame !== "SKIP"
+            ? sanitizedData.frame
+            : prev.frame,
+      }));
+
       const eeg = sanitizedData.eeg;
       const vis = sanitizedData.vision;
 
-      // ========================================================
-      // 🧠 THUẬT TOÁN SENSOR FUSION (Đã đồng bộ với 7 cảm xúc DeepFace)
-      // ========================================================
       const att = eeg.attention || 0;
       const med = eeg.meditation || 0;
       const head = (vis.head_pose_state || "").toUpperCase();
       const gaze = (vis.gaze_state || "").toUpperCase();
       const emo = (vis.emotion || "").toUpperCase();
 
-      // 1. Chấm điểm Head và Gaze
-      const scoreHead =
-        head.includes("NHÌN THẲNG") || head.includes("NHIN THANG")
-          ? 100
-          : head.includes("KHÔNG") || head.includes("NO")
-            ? 0
-            : 30;
-      const scoreGaze =
-        gaze.includes("NHÌN THẲNG") || gaze.includes("NHIN THANG")
-          ? 100
-          : gaze.includes("KHÔNG") || gaze.includes("NO")
-            ? 0
-            : 40;
+      // 1. Chấm điểm Head Pose với đủ 5 trạng thái chuyển động.
+      let scoreHead = 30;
 
-      // 2. Phân loại 7 cảm xúc DeepFace cho Độ Tập Trung
-      let scoreEmoFocus = 100; // Mặc định VUI VẺ, BÌNH THƯỜNG
-      if (emo.includes("NGẠC NHIÊN"))
-        scoreEmoFocus = 80; // Hơi mất tập trung nhẹ
-      else if (emo.includes("BUỒN") || emo.includes("SỢ"))
-        scoreEmoFocus = 40; // Tâm lý chán nản
-      else if (emo.includes("TỨC") || emo.includes("KHÓ CHỊU"))
-        scoreEmoFocus = 20; // Kích động, xao nhãng nặng
-
-      // TÍNH % TẬP TRUNG (FOCUS)
-      let focusPercent = att * 0.6 + scoreHead * 0.2 + scoreGaze * 0.2;
-
-      // 3. Phân loại cảm xúc cho Độ Thư Giãn
-      let emoRelaxScore = 100; // VUI VẺ, BÌNH THƯỜNG
-      if (emo.includes("NGẠC NHIÊN")) emoRelaxScore = 60;
-      else if (emo.includes("BUỒN")) emoRelaxScore = 40;
-      else if (
-        emo.includes("TỨC") ||
-        emo.includes("SỢ") ||
-        emo.includes("KHÓ CHỊU")
-      )
-        emoRelaxScore = 10; // Đánh mất hoàn toàn sự tĩnh tâm
-
-      // TÍNH % THƯ GIÃN (RELAXATION)
-      let relaxPercent = med * 0.8 + emoRelaxScore * 0.2;
-
-      // 4. TÍNH % CĂNG THẲNG (STRESS)
-      let baseStress = att - med;
-      let stressPercent = baseStress > 0 ? baseStress : 0;
-      // Cộng hưởng áp lực nếu Camera thấy mặt đang tiêu cực
-      if (
-        emo.includes("TỨC") ||
-        emo.includes("KHÓ CHỊU") ||
-        emo.includes("SỢ")
+      if (head.includes("NHÌN THẲNG") || head.includes("NHIN THANG")) {
+        scoreHead = 100;
+      } else if (
+        head.includes("KHÔNG") ||
+        head.includes("KHONG") ||
+        head.includes("NO")
       ) {
-        stressPercent += 35;
+        scoreHead = 0;
+      } else if (head.includes("NGẨNG LÊN") || head.includes("NGANG LEN")) {
+        scoreHead = 60;
+      } else if (head.includes("CÚI XUỐNG") || head.includes("CUI XUONG")) {
+        scoreHead = 20;
+      } else if (
+        head.includes("QUAY TRÁI") ||
+        head.includes("QUAY TRAI") ||
+        head.includes("QUAY PHẢI") ||
+        head.includes("QUAY PHAI")
+      ) {
+        scoreHead = 35;
       }
 
-      // 5. TÍNH % MỆT MỎI (FATIGUE)
-      let fatiguePercent = 100 - att;
-      // Vì DeepFace không có chữ "Mệt mỏi", ta dùng logic kết hợp:
-      // Nếu mặt "Buồn bã" (cơ mặt xệ xuống) HOẶC "Bình thường" (mắt lờ đờ) CỘNG THÊM sóng Não đang tụt thấp (<30)
-      if ((emo.includes("BUỒN") || emo.includes("BÌNH THƯỜNG")) && att < 30) {
-        fatiguePercent = Math.max(75, fatiguePercent); // Ép thanh màu đỏ vọt lên báo động
+      // 2. Chấm điểm Gaze với đủ 5 trạng thái chuyển động.
+      let scoreGaze = 40;
+
+      if (gaze.includes("NHÌN THẲNG") || gaze.includes("NHIN THANG")) {
+        scoreGaze = 100;
+      } else if (
+        gaze.includes("KHÔNG") ||
+        gaze.includes("KHONG") ||
+        gaze.includes("NO")
+      ) {
+        scoreGaze = 0;
+      } else if (gaze.includes("LIẾC LÊN") || gaze.includes("LIEC LEN")) {
+        scoreGaze = 50;
+      } else if (gaze.includes("LIẾC XUỐNG") || gaze.includes("LIEC XUONG")) {
+        scoreGaze = 20;
+      } else if (
+        gaze.includes("LIẾC TRÁI") ||
+        gaze.includes("LIEC TRAI") ||
+        gaze.includes("LIẾC PHẢI") ||
+        gaze.includes("LIEC PHAI")
+      ) {
+        scoreGaze = 40;
       }
-      // Giữ lại dòng này phòng trường hợp Sơn dùng file Excel cũ có chữ "Mệt mỏi" để test
-      if (emo.includes("MỆT") || emo.includes("MET")) {
-        fatiguePercent = Math.max(85, fatiguePercent);
+      // 1. MỨC ĐỘ TẬP TRUNG
+      // Attention là tín hiệu chính; Head Pose và Gaze là tín hiệu hỗ trợ.
+      const focusPercent = att * 0.7 + scoreHead * 0.15 + scoreGaze * 0.15;
+
+      // 2. ĐỘ THƯ GIÃN
+      // Meditation là tín hiệu chính, Emotion hỗ trợ đánh giá trạng thái bình tĩnh.
+      let emotionRelaxScore = 50;
+
+      if (
+        emo.includes("BÌNH THƯỜNG") ||
+        emo.includes("BINH THUONG") ||
+        emo.includes("NEUTRAL")
+      ) {
+        emotionRelaxScore = 80;
+      } else if (emo.includes("VUI") || emo.includes("HAPPY")) {
+        emotionRelaxScore = 70;
+      } else if (
+        emo.includes("NGẠC NHIÊN") ||
+        emo.includes("NGAC NHIEN") ||
+        emo.includes("SURPRISE")
+      ) {
+        emotionRelaxScore = 45;
+      } else if (
+        emo.includes("BUỒN") ||
+        emo.includes("BUON") ||
+        emo.includes("SAD")
+      ) {
+        emotionRelaxScore = 35;
+      } else if (
+        emo.includes("TỨC") ||
+        emo.includes("TUC") ||
+        emo.includes("SỢ") ||
+        emo.includes("SO") ||
+        emo.includes("KHÓ CHỊU") ||
+        emo.includes("KHO CHIU") ||
+        emo.includes("ANGRY") ||
+        emo.includes("FEAR") ||
+        emo.includes("DISGUST")
+      ) {
+        emotionRelaxScore = 15;
       }
 
-      // 6. GHIM KẾT QUẢ (0 - 100)
+      const relaxPercent = med * 0.85 + emotionRelaxScore * 0.15;
+
+      // 3. ÁP LỰC / CĂNG THẲNG
+      // Meditation thấp làm tăng áp lực; cảm xúc tiêu cực làm tăng thêm điểm stress.
+      let emotionStressScore = 10;
+
+      if (emo.includes("VUI") || emo.includes("HAPPY")) {
+        emotionStressScore = 5;
+      } else if (
+        emo.includes("BÌNH THƯỜNG") ||
+        emo.includes("BINH THUONG") ||
+        emo.includes("NEUTRAL")
+      ) {
+        emotionStressScore = 10;
+      } else if (
+        emo.includes("NGẠC NHIÊN") ||
+        emo.includes("NGAC NHIEN") ||
+        emo.includes("SURPRISE")
+      ) {
+        emotionStressScore = 40;
+      } else if (
+        emo.includes("BUỒN") ||
+        emo.includes("BUON") ||
+        emo.includes("SAD")
+      ) {
+        emotionStressScore = 55;
+      } else if (
+        emo.includes("KHÓ CHỊU") ||
+        emo.includes("KHO CHIU") ||
+        emo.includes("DISGUST")
+      ) {
+        emotionStressScore = 80;
+      } else if (
+        emo.includes("SỢ") ||
+        emo.includes("SO") ||
+        emo.includes("FEAR")
+      ) {
+        emotionStressScore = 90;
+      } else if (
+        emo.includes("TỨC") ||
+        emo.includes("TUC") ||
+        emo.includes("ANGRY")
+      ) {
+        emotionStressScore = 100;
+      }
+
+      const stressPercent = (100 - med) * 0.7 + emotionStressScore * 0.3;
+
+      // 4. NGUY CƠ MỆT MỎI
+      // Attention thấp là tín hiệu chính; cúi đầu và nhìn xuống là tín hiệu hỗ trợ.
+      let headFatigueScore = 10;
+
+      if (
+        head.includes("KHÔNG") ||
+        head.includes("KHONG") ||
+        head.includes("NO")
+      ) {
+        headFatigueScore = 0;
+      } else if (head.includes("NHÌN THẲNG") || head.includes("NHIN THANG")) {
+        headFatigueScore = 10;
+      } else if (head.includes("NGẨNG LÊN") || head.includes("NGANG LEN")) {
+        headFatigueScore = 20;
+      } else if (
+        head.includes("QUAY TRÁI") ||
+        head.includes("QUAY TRAI") ||
+        head.includes("QUAY PHẢI") ||
+        head.includes("QUAY PHAI")
+      ) {
+        headFatigueScore = 40;
+      } else if (head.includes("CÚI XUỐNG") || head.includes("CUI XUONG")) {
+        headFatigueScore = 100;
+      }
+
+      let gazeFatigueScore = 10;
+
+      if (
+        gaze.includes("KHÔNG") ||
+        gaze.includes("KHONG") ||
+        gaze.includes("NO")
+      ) {
+        gazeFatigueScore = 0;
+      } else if (gaze.includes("NHÌN THẲNG") || gaze.includes("NHIN THANG")) {
+        gazeFatigueScore = 10;
+      } else if (gaze.includes("LIẾC LÊN") || gaze.includes("LIEC LEN")) {
+        gazeFatigueScore = 20;
+      } else if (
+        gaze.includes("LIẾC TRÁI") ||
+        gaze.includes("LIEC TRAI") ||
+        gaze.includes("LIẾC PHẢI") ||
+        gaze.includes("LIEC PHAI")
+      ) {
+        gazeFatigueScore = 40;
+      } else if (gaze.includes("LIẾC XUỐNG") || gaze.includes("LIEC XUONG")) {
+        gazeFatigueScore = 100;
+      }
+
+      const fatiguePercent =
+        (100 - att) * 0.6 + headFatigueScore * 0.2 + gazeFatigueScore * 0.2;
+
+      // Giới hạn các kết quả trong khoảng 0 - 100.
       const clamp = (num) => Math.max(0, Math.min(100, Math.round(num)));
+
       setAiMetrics({
         focus: clamp(focusPercent),
         relaxation: clamp(relaxPercent),
@@ -154,51 +289,34 @@ const MasterDashboard = () => {
         fatigue: clamp(fatiguePercent),
       });
 
-      // ========================================================
-      // TÁI TẠO WAVEFORM & SPECTRUM
-      // ========================================================
-      const totalPower =
-        (eeg.delta || 0) +
-          (eeg.theta || 0) +
-          (eeg.low_alpha || 0) +
-          (eeg.high_alpha || 0) +
-          (eeg.low_beta || 0) +
-          (eeg.high_beta || 0) +
-          (eeg.low_gamma || 0) +
-          (eeg.mid_gamma || 0) || 1;
+      // VẼ BIỂU ĐỒ
+      // 1. Raw Waveform: dữ liệu raw_values lấy từ TGAM code 0x80.
+      if (
+        Array.isArray(sanitizedData.raw_values) &&
+        sanitizedData.raw_values.length > 0
+      ) {
+        const realWave = sanitizedData.raw_values.map((val, index) => ({
+          ms: Math.round(index * (1000 / 512)),
+          // Ghim phần hiển thị trong khoảng -500 đến 500 để đồ thị không bị văng.
+          uv: val > 500 ? 500 : val < -500 ? -500 : val,
+        }));
 
-      let newWave = [];
-      for (let i = 0; i <= 100; i++) {
-        let t = i / 100;
-        let v = 0;
-        v += (eeg.delta / totalPower) * Math.sin(2 * Math.PI * 2 * t);
-        v += (eeg.theta / totalPower) * Math.sin(2 * Math.PI * 6 * t);
-        v +=
-          ((eeg.low_alpha + eeg.high_alpha) / totalPower) *
-          Math.sin(2 * Math.PI * 10 * t);
-        v +=
-          ((eeg.low_beta + eeg.high_beta) / totalPower) *
-          Math.sin(2 * Math.PI * 20 * t);
-        v +=
-          ((eeg.low_gamma + eeg.mid_gamma) / totalPower) *
-          Math.sin(2 * Math.PI * 40 * t);
-        v = v * 800 + (Math.random() - 0.5) * 15;
-        newWave.push({ ms: i * 10, uv: v });
+        setWaveData(realWave);
       }
-      setWaveData(newWave);
 
-      let newSpectrum = [];
-      for (let i = 0; i <= 62; i += 2) {
-        let p = 0;
-        if (i >= 0 && i <= 3) p = eeg.delta / 2;
-        else if (i >= 4 && i <= 7) p = eeg.theta / 3;
-        else if (i >= 8 && i <= 12) p = (eeg.low_alpha + eeg.high_alpha) / 4;
-        else if (i >= 13 && i <= 30) p = (eeg.low_beta + eeg.high_beta) / 10;
-        else if (i >= 31 && i <= 60) p = (eeg.low_gamma + eeg.mid_gamma) / 15;
-        p = p * (0.5 + Math.random() * 0.5);
-        newSpectrum.push({ hz: `${i}Hz`, power: Math.floor(p) });
-      }
-      setSpectrumData(newSpectrum);
+      // 2. ASIC EEG Power: 8 dải băng tần thật từ TGAM code 0x83.
+      const spectrumBands = [
+        { hz: "Delta", power: eeg.delta || 0 },
+        { hz: "Theta", power: eeg.theta || 0 },
+        { hz: "L-Alpha", power: eeg.low_alpha || 0 },
+        { hz: "H-Alpha", power: eeg.high_alpha || 0 },
+        { hz: "L-Beta", power: eeg.low_beta || 0 },
+        { hz: "H-Beta", power: eeg.high_beta || 0 },
+        { hz: "L-Gamma", power: eeg.low_gamma || 0 },
+        { hz: "M-Gamma", power: eeg.mid_gamma || 0 },
+      ];
+
+      setSpectrumData(spectrumBands);
 
       // Log hệ thống
       if (Math.random() > 0.7) {
@@ -209,9 +327,13 @@ const MasterDashboard = () => {
           ].slice(0, 10),
         );
       }
-    });
+    };
 
-    return () => socket.off("sensor_data");
+    socket.on("sensor_data", handleSensorData);
+
+    return () => {
+      socket.off("sensor_data", handleSensorData);
+    };
   }, []);
 
   const calculateBands = () => {
@@ -368,7 +490,7 @@ const MasterDashboard = () => {
             gap: "24px",
           }}
         >
-          {/* 🔥 KHỐI MỚI: RAW EEG (ĐẶT NẰM NGANG NHAU ĐỂ TIẾT KIỆM DIỆN TÍCH) */}
+          {/* RAW EEG */}
           <div style={{ display: "flex", gap: "15px" }}>
             {/* RAW ATTENTION */}
             <div
@@ -447,7 +569,7 @@ const MasterDashboard = () => {
                   margin: "0 0 5px 0",
                 }}
               >
-                RELAXATION
+                MEDITATION
               </h4>
               <div
                 style={{
@@ -676,7 +798,7 @@ const MasterDashboard = () => {
                   fontFamily: "monospace",
                 }}
               >
-                DEEPFACE ENGINE V2
+                DEEPFACE ENGINE
               </div>
             </div>
 
@@ -712,26 +834,79 @@ const MasterDashboard = () => {
                 </div>
               )}
 
+              {/* HEAD / GAZE / EMOTION */}
               <div
                 style={{
                   position: "absolute",
-                  bottom: "15px",
+                  top: "15px",
                   left: "15px",
-                  background: "rgba(0,0,0,0.8)",
-                  padding: "8px 15px",
-                  borderRadius: "8px",
-                  borderLeft: "3px solid #f59e0b",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "8px",
+                  zIndex: 2,
                 }}
               >
-                <span
+                <div
                   style={{
-                    color: "#fde047",
-                    fontWeight: "bold",
-                    fontSize: "12px",
+                    background: "rgba(0,0,0,0.82)",
+                    padding: "8px 15px",
+                    borderRadius: "8px",
+                    borderLeft: "3px solid #facc15",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
                   }}
                 >
-                  EMOTION: {(systemData.vision?.emotion || "N/A").toUpperCase()}
-                </span>
+                  <span
+                    style={{
+                      color: "#fde047",
+                      fontWeight: "bold",
+                      fontSize: "12px",
+                    }}
+                  >
+                    HEAD:{" "}
+                    {systemData.vision?.head_pose_state || "Không xác định"}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    background: "rgba(0,0,0,0.82)",
+                    padding: "8px 15px",
+                    borderRadius: "8px",
+                    borderLeft: "3px solid #10b981",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: "#34d399",
+                      fontWeight: "bold",
+                      fontSize: "12px",
+                    }}
+                  >
+                    GAZE: {systemData.vision?.gaze_state || "Không xác định"}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    background: "rgba(0,0,0,0.82)",
+                    padding: "8px 15px",
+                    borderRadius: "8px",
+                    borderLeft: "3px solid #06b6d4",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: "#22d3ee",
+                      fontWeight: "bold",
+                      fontSize: "12px",
+                    }}
+                  >
+                    EMOTION: {systemData.vision?.emotion || "Không xác định"}
+                  </span>
+                </div>
               </div>
               <div
                 style={{
@@ -742,6 +917,7 @@ const MasterDashboard = () => {
                   padding: "8px 15px",
                   borderRadius: "8px",
                   borderRight: "3px solid #10b981",
+                  zIndex: 2,
                 }}
               >
                 <span
@@ -907,7 +1083,7 @@ const MasterDashboard = () => {
                 ></span>
                 RAW WAVEFORM (μV/ms)
               </h3>
-              <div
+              {/* <div
                 style={{
                   fontSize: "9px",
                   color: "#94a3b8",
@@ -919,7 +1095,7 @@ const MasterDashboard = () => {
                 }}
               >
                 RANGE: ±500μV | WINDOW: 1000ms
-              </div>
+              </div> */}
             </div>
             <div
               style={{
@@ -1026,7 +1202,7 @@ const MasterDashboard = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={spectrumData}
-                  margin={{ top: 15, right: 10, left: -20, bottom: 5 }}
+                  margin={{ top: 15, right: 10, left: -20, bottom: 30 }}
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
@@ -1038,13 +1214,14 @@ const MasterDashboard = () => {
                     tick={{ fontSize: 8, fill: "#475569" }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(val) => (val % 5 === 0 ? `${val}Hz` : "")}
+                    tickFormatter={(val) => val}
                     angle={-45}
                     textAnchor="end"
+                    interval={0}
                   />
                   <YAxis hide />
                   <Tooltip
-                    labelFormatter={(label) => `Freq: ${label}Hz`}
+                    labelFormatter={(label) => `Dải sóng: ${label}`}
                     cursor={{ fill: "rgba(255,255,255,0.05)" }}
                     contentStyle={{
                       backgroundColor: "#0f172a",

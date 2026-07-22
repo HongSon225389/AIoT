@@ -65,8 +65,8 @@ const DatasetExporter = () => {
     >
       <h4 style={{ color: "#fff", marginTop: 0 }}>Kho Dữ Liệu AI</h4>
       <p style={{ color: "#a0aec0", fontSize: "14px" }}>
-        Trích xuất toàn bộ lịch sử các phiên đo thành file Excel để đưa vào
-        Python huấn luyện thuật toán.
+        Trích xuất toàn bộ lịch sử các phiên đo thành file CSV để đưa vào Python
+        huấn luyện thuật toán.
       </p>
       <button
         onClick={handleDownloadDataset}
@@ -83,7 +83,7 @@ const DatasetExporter = () => {
         }}
       >
         {isDownloading
-          ? "⏳ Đang trích xuất và nén file..."
+          ? "⏳ Đang trích xuất dữ liệu..."
           : "📥 Tải Dataset Huấn Luyện (CSV)"}
       </button>
     </div>
