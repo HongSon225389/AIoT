@@ -39,7 +39,7 @@ class TGAMReader:
             self.data['low_gamma'] = random.randint(10000, 30000)
             self.data['mid_gamma'] = random.randint(5000, 20000)
             
-            self.data["raw_values"] = [random.randint(-200, 200) for _ in range(128)]
+            self.data["raw_values"] = [random.randint(-200, 200) for _ in range(512)]
             time.sleep(1)
 
     def get_data(self):

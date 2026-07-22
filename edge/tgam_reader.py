@@ -52,7 +52,7 @@ class TGAMReader:
                 raw_val = (payload[i] << 8) | payload[i+1]
                 if raw_val > 32767: raw_val -= 65536
                 self.raw_buffer.append(raw_val)
-                if len(self.raw_buffer) > 128: # Giữ lại 128 điểm gần nhất
+                if len(self.raw_buffer) > 512: # Giữ lại 512 điểm gần nhất
                     self.raw_buffer.pop(0)
                 self.data["raw_values"] = self.raw_buffer
                 i += 2

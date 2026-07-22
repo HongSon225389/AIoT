@@ -7,7 +7,7 @@ import joblib
 
 def train_ai():
     print("⏳ 1. Đang tải dữ liệu từ file Excel CSV...")
-    df = pd.read_csv("OptiMind_Dataset_9-6-2026.csv", encoding="utf-8")
+    df = pd.read_csv("dataset.csv", encoding="utf-8")
     
     print(f"📊 Tìm thấy tổng cộng {len(df)} dòng dữ liệu.")
 
@@ -38,12 +38,10 @@ def train_ai():
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Huấn luyện Mô hình Học máy với thuật toán Random Forest
     print("🔥 3. Đang huấn luyện Mô hình AI (Random Forest)...")
     model = RandomForestClassifier(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
-    #  Đánh giá kiểm tra độ thông minh của AI
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
     print(f"\n✅ ĐÃ HUẤN LUYỆN XONG!")
