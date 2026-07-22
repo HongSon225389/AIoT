@@ -1,38 +1,22 @@
 const Telemetry = require("../models/telemetryModel");
 
-const processPayload = (payload) => {
-  if (payload.eeg) {
-    payload.eeg.alpha =
-      (payload.eeg.low_alpha || 0) + (payload.eeg.high_alpha || 0);
-    payload.eeg.beta =
-      (payload.eeg.low_beta || 0) + (payload.eeg.high_beta || 0);
-    payload.eeg.gamma =
-      (payload.eeg.low_gamma || 0) + (payload.eeg.mid_gamma || 0);
-  }
-  if (payload.vision) {
-    payload.vision.emotion = payload.vision.emotion || "N/A";
-    payload.vision.gaze = payload.vision.gaze_state || "N/A";
-  }
-  return payload;
-};
-
 let lastSaveTime = 0;
 // 🔥 HỨNG LUỒNG SIÊU TỐC TỪ PYTHON
 exports.handleSocketData = (socket) => (payload) => {
   try {
-    const processed = processPayload(payload);
+    // 1. Bắn qua React Web ngay lập tức (Real-time 25 FPS)
+    // Dùng io.emit thay vì broadcast để đảm bảo mọi Client đều nhận được
+    socket.broadcast.emit("sensor_data", payload);
 
-    // Đẩy sang React Web ngay lập tức
-    socket.broadcast.emit("sensor_data", processed);
+    // 2. Lọc bỏ hình ảnh Base64 và mảng raw_values nặng nề trước khi xét duyệt DB
+    const { frame, raw_values, ...dataToSave } = payload;
 
-    // Lưu DB
-    // const { frame, raw_values, ...dataToSave } = processed;
-    // new Telemetry(dataToSave).save().catch(() => {});
+    // 3. Cơ chế Throttling: Chỉ lưu DB 1 lần mỗi giây (1 FPS)
     const currentTime = Date.now();
     if (currentTime - lastSaveTime >= 1000) {
-      const { frame, raw_values, ...dataToSave } = processed;
-
-      new Telemetry(dataToSave).save().catch(() => {});
+      new Telemetry(dataToSave)
+        .save()
+        .catch((err) => console.error("⚠️ [DB Error]:", err.message));
 
       lastSaveTime = currentTime; // Reset lại đồng hồ
     }

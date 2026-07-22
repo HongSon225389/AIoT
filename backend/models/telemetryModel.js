@@ -22,6 +22,7 @@ const telemetrySchema = new mongoose.Schema({
     gaze_state: String,
     head_pose_state: String,
     emotion: String,
+    person_id: String,
   },
   final_state: String,
   local_time: {
