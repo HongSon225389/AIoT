@@ -1081,7 +1081,7 @@ const MasterDashboard = () => {
                     boxShadow: "0 0 10px #10b981",
                   }}
                 ></span>
-                RAW WAVEFORM (μV/ms)
+                RAW WAVEFORM
               </h3>
               {/* <div
                 style={{

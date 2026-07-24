@@ -9,8 +9,8 @@ import time
 import cv2
 import socketio
 
-from tgam_reader import TGAMReader
-# from mock_tgam_focus import TGAMReader
+# from tgam_reader import TGAMReader
+from mock_tgam_focus import TGAMReader
 # from mock_tgam_sleep import TGAMReader
 from vision_tracker import VisionTracker
 
