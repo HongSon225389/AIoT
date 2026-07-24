@@ -5,6 +5,8 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const connectDB = require("./config/db");
 const telemetryController = require("./controllers/telemetryController");
+const telemetryRoutes = require("./routes/telemetryRoutes");
+const labelRoutes = require("./routes/labelRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -18,12 +20,10 @@ app.use(express.json({ limit: "50mb" }));
 
 connectDB();
 
+// Lắng nghe dữ liệu Socket từ Python và truyền qua Controller xử lý
 io.on("connection", (socket) => {
   socket.on("sensor_data", telemetryController.handleSocketData(socket));
 });
-
-const telemetryRoutes = require("./routes/telemetryRoutes")(io);
-const labelRoutes = require("./routes/labelRoutes");
 
 app.use("/api", telemetryRoutes);
 app.use("/api", labelRoutes);

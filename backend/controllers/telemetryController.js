@@ -1,16 +1,16 @@
 const Telemetry = require("../models/telemetryModel");
 
 let lastSaveTime = 0;
-// 🔥 HỨNG LUỒNG SIÊU TỐC TỪ PYTHON
+//  HỨNG LUỒNG SIÊU TỐC TỪ PYTHON
 exports.handleSocketData = (socket) => (payload) => {
   try {
-    // 1. Bắn qua React Web ngay lập tức (Real-time 25 FPS)
+    // Bắn qua React Web ngay lập tức (Real-time 25 FPS)
     socket.broadcast.emit("sensor_data", payload);
 
-    // 2. Lọc bỏ hình ảnh Base64 và mảng raw_values nặng nề trước khi xét duyệt DB
+    // Lọc bỏ hình ảnh Base64 và mảng raw_values nặng nề trước khi xét duyệt DB
     const { frame, raw_values, ...dataToSave } = payload;
 
-    // 3. Cơ chế Throttling: Chỉ lưu DB 1 lần mỗi giây (1 FPS)
+    // Cơ chế Throttling: Chỉ lưu DB 1 lần mỗi giây (1 FPS)
     const currentTime = Date.now();
     if (currentTime - lastSaveTime >= 1000) {
       new Telemetry(dataToSave)
@@ -21,20 +21,6 @@ exports.handleSocketData = (socket) => (payload) => {
     }
   } catch (error) {
     console.error("Socket Error:", error);
-  }
-};
-
-exports.receiveEEGData = (io) => (req, res) => {
-  try {
-    const payload = processPayload(req.body);
-    io.emit("sensor_data", payload);
-    const { frame, raw_values, ...dataToSave } = payload;
-    new Telemetry(dataToSave)
-      .save()
-      .catch((err) => console.error("⚠️ [DB Error]:", err.message));
-    res.status(200).send("OK");
-  } catch (error) {
-    res.status(500).send("Error");
   }
 };
 

@@ -30,12 +30,12 @@ class TGAMReader:
             self.data["meditation"] = random.randint(60, 95)
             
             # Sóng Delta/Theta (ngủ sâu, lơ mơ) tăng cực cao, Beta (logic) chạm đáy
-            self.data['delta'] = random.randint(500000, 1500000) # Cực cao
-            self.data['theta'] = random.randint(200000, 800000)  # Cực cao
+            self.data['delta'] = random.randint(500000, 1500000) 
+            self.data['theta'] = random.randint(200000, 800000)  
             self.data['low_alpha'] = random.randint(10000, 40000)
             self.data['high_alpha'] = random.randint(10000, 40000)
-            self.data['low_beta'] = random.randint(1000, 10000)    # Rất thấp
-            self.data['high_beta'] = random.randint(1000, 10000)   # Rất thấp
+            self.data['low_beta'] = random.randint(1000, 10000)    
+            self.data['high_beta'] = random.randint(1000, 10000)   
             self.data['low_gamma'] = random.randint(500, 3000)
             self.data['mid_gamma'] = random.randint(500, 3000)
             

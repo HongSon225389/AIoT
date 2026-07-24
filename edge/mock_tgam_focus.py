@@ -34,8 +34,8 @@ class TGAMReader:
             self.data['theta'] = random.randint(20000, 80000)
             self.data['low_alpha'] = random.randint(20000, 60000)
             self.data['high_alpha'] = random.randint(20000, 60000)
-            self.data['low_beta'] = random.randint(50000, 150000)  # Tăng vọt
-            self.data['high_beta'] = random.randint(50000, 150000) # Tăng vọt
+            self.data['low_beta'] = random.randint(50000, 150000)  
+            self.data['high_beta'] = random.randint(50000, 150000) 
             self.data['low_gamma'] = random.randint(10000, 30000)
             self.data['mid_gamma'] = random.randint(5000, 20000)
             

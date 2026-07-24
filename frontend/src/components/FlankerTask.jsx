@@ -75,8 +75,7 @@ const FlankerTask = () => {
         });
       }
     }, TIME_LIMIT);
-  }, []); // Đã tối ưu dependencies
-
+  }, []);
   const startGame = () => {
     taskStartTime.current = Date.now();
     setIsRunning(true);
